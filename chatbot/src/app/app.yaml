@@ -1,0 +1,18 @@
+# Databricks App configuration (used by `bundle deploy`).
+# The port MUST come from DATABRICKS_APP_PORT (injected by the Apps runtime) —
+# hardcoding a different port makes the app unreachable.
+command:
+  - streamlit
+  - run
+  - app.py
+  - --server.port=$DATABRICKS_APP_PORT
+
+env:
+  - name: VS_ENDPOINT_NAME
+    value: 'rag-chatbot-dev'
+  - name: VS_INDEX_NAME
+    value: 'rag_chatbot_dev.silver.doc_chunks_builtin_vs'
+  - name: LLM_MODEL
+    value: 'system.ai.meta-llama-3-3-70b-instruct'
+  - name: NUM_CHUNKS
+    value: '4'

@@ -13,11 +13,16 @@ src/
 │  ├─ PDF Parsing (built-in AI functions)   # ai_parse_document -> bronze.doc_parsed_builtin (hash-cached)
 │  ├─ PDF Chunking (built-in AI functions)  # ai_prep_search -> silver.doc_chunks_builtin
 │  └─ Vector Search Setup (built-in AI functions)  # endpoint + Delta Sync index (TRIGGERED sync)
-└─ pypdf/                                   # free pypdf variant (kept for comparison, not scheduled)
-   ├─ PDF Parsing (pypdf)                   # pypdf text extraction -> bronze.doc_parsed_pypdf
-   └─ PDF Chunking (pypdf)                  # fixed-window chunking -> silver.doc_chunks_pypdf
+├─ pypdf/                                   # free pypdf variant (kept for comparison, not scheduled)
+│  ├─ PDF Parsing (pypdf)                   # pypdf text extraction -> bronze.doc_parsed_pypdf
+│  └─ PDF Chunking (pypdf)                  # fixed-window chunking -> silver.doc_chunks_pypdf
+└─ app/                                     # RAG chatbot (Databricks App, Streamlit)
+   ├─ app.py                                # retrieval + grounded answers + citations
+   ├─ app.yaml                              # app command + environment configuration
+   └─ requirements.txt
 resources/
-└─ pdf_rag_ingestion_job.yml                # job: setup -> parse -> chunk -> vector search sync
+├─ pdf_rag_ingestion_job.yml                # job: setup -> parse -> chunk -> vector search sync
+└─ rag_chatbot.app.yml                       # the chatbot app, deployed by the same bundle
 ```
 
 All steps are idempotent and cache-aware: PDFs are parsed once (re-parsed only
@@ -36,9 +41,21 @@ embeds the context-enriched `content_to_embed` column with
   different workspace).
 
 The deploy creates the `pdf_rag_ingestion` job (setup -> parse -> chunk ->
-vector search sync) and syncs all `src/` notebooks. Deploying to a fresh
-workspace requires: permissions to create catalogs, the `docs` volume populated
-with PDFs, and access to built-in AI functions / model endpoints.
+vector search sync) AND the `pdf-rag-chatbot-dev` app, and syncs all `src/`
+notebooks. Deploying to a fresh workspace requires: permissions to create
+catalogs, the `docs` volume populated with PDFs, and access to built-in AI
+functions / model endpoints.
+
+### One-time app permissions
+
+After the FIRST deploy, the chatbot app's service principal needs grants to
+reach the data and models:
+
+* `CAN_USE` on the `rag-chatbot-dev` Vector Search endpoint
+* `USE CATALOG` / `USE SCHEMA` on `rag_chatbot_dev.silver` (and index access)
+* `EXECUTE` on `system.ai.meta-llama-3-3-70b-instruct` (plus `USE CATALOG` / `USE SCHEMA` on `system.ai`)
+
+The app's service principal id is shown by `databricks apps get pdf-rag-chatbot-dev`.
 
 ### 2. Run the job
 
@@ -46,7 +63,13 @@ with PDFs, and access to built-in AI functions / model endpoints.
 - First run in a new workspace takes ~10-15 minutes extra: it provisions the
   Vector Search endpoint. Subsequent runs are cache-hits and fast.
 
-### 3. Query the index
+### 3. Use the chatbot
+
+Open the `pdf-rag-chatbot-dev` app (Apps in the workspace sidebar, or the URL
+from `databricks apps get pdf-rag-chatbot-dev`) and ask questions — answers are
+grounded in the retrieved chunks and cite their source PDFs.
+
+### 4. Query the index directly
 
 Query `rag_chatbot_dev.silver.doc_chunks_builtin_vs` on endpoint
 `rag-chatbot-dev` (SDK `query_index`, or the `ai_vector_search()` SQL
