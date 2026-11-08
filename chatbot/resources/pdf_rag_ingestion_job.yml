@@ -1,0 +1,54 @@
+# PDF RAG ingestion job: the built-in AI functions pipeline, end to end.
+#
+# Task order matters:
+#   1. setup            — creates catalog rag_chatbot_dev, bronze/silver schemas, docs volume (idempotent)
+#   2. parse_builtin    — ai_parse_document parses PDFs into bronze.doc_parsed_builtin
+#                          (content-hash cache: only new/changed files are billed)
+#   3. chunk_builtin    — ai_prep_search semantic chunking into silver.doc_chunks_builtin
+#   4. vector_search    — creates/refreshes the Vector Search endpoint + Delta Sync index
+#                          and triggers a sync (idempotent; slow only on very first run,
+#                          while the endpoint provisions)
+#
+# The pypdf variant notebooks under src/pypdf are part of the bundle (synced)
+# but intentionally not scheduled in this job.
+resources:
+  jobs:
+    pdf_rag_ingestion:
+      name: pdf_rag_ingestion
+      description: "End-to-end PDF ingestion for the RAG chatbot: volume -> parse (ai_parse_document) -> chunk (ai_prep_search) -> Vector Search index sync. All steps are idempotent and cache-aware."
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+
+      tasks:
+        - task_key: setup
+          environment_key: default
+          notebook_task:
+            notebook_path: "../src/SetupNotebook.ipynb"
+            source: WORKSPACE
+
+        - task_key: parse_builtin
+          depends_on:
+            - task_key: setup
+          environment_key: default
+          notebook_task:
+            notebook_path: "../src/builtin/PDF Parsing (built-in AI functions).ipynb"
+            source: WORKSPACE
+
+        - task_key: chunk_builtin
+          depends_on:
+            - task_key: parse_builtin
+          environment_key: default
+          notebook_task:
+            notebook_path: "../src/builtin/PDF Chunking (built-in AI functions).ipynb"
+            source: WORKSPACE
+
+        - task_key: vector_search_sync
+          depends_on:
+            - task_key: chunk_builtin
+          environment_key: default
+          notebook_task:
+            notebook_path: "../src/builtin/Vector Search Setup (built-in AI functions).ipynb"
+            source: WORKSPACE
