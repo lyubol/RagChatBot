@@ -46,16 +46,62 @@ notebooks. Deploying to a fresh workspace requires: permissions to create
 catalogs, the `docs` volume populated with PDFs, and access to built-in AI
 functions / model endpoints.
 
+**Deploy the app's source code.** `bundle deploy` creates the app object but
+does NOT put its code on compute — the app stays `UNAVAILABLE` until you run
+this once (and after any change to `src/app/`):
+
+```bash
+databricks apps deploy pdf-rag-chatbot-dev \n  --source-code-path /Workspace/<path-to>/chatbot/src/app \n  --mode SNAPSHOT
+```
+
+If the app compute is stopped, start it first:
+`databricks apps start pdf-rag-chatbot-dev`.
+
 ### One-time app permissions
 
-After the FIRST deploy, the chatbot app's service principal needs grants to
-reach the data and models:
+After the FIRST deploy, the chatbot app's service principal (created by the
+deploy) needs grants to reach the data and models. Do these once per workspace.
 
-* `CAN_USE` on the `rag-chatbot-dev` Vector Search endpoint
-* `USE CATALOG` / `USE SCHEMA` on `rag_chatbot_dev.silver` (and index access)
-* `EXECUTE` on `system.ai.meta-llama-3-3-70b-instruct` (plus `USE CATALOG` / `USE SCHEMA` on `system.ai`)
+**1. Find the app's service principal UUID:**
 
-The app's service principal id is shown by `databricks apps get pdf-rag-chatbot-dev`.
+```bash
+databricks apps get pdf-rag-chatbot-dev --output JSON
+```
+
+Use the `service_principal_client_id` value as `<APP_SP_UUID>` below.
+
+**2. Grant Vector Search endpoint access.** The CLI takes the endpoint's UUID,
+not its name (get it with `databricks vector-search-endpoints get-endpoint rag-chatbot-dev`):
+
+```bash
+databricks vector-search-endpoints update-permissions <ENDPOINT_UUID> \n  --json '{"access_control_list": [{"service_principal_name": "<APP_SP_UUID>", "permission_level": "CAN_USE"}]}'
+```
+
+**3. Grant Unity Catalog access** (SQL editor, run as the catalog owner):
+
+```sql
+GRANT USE CATALOG ON CATALOG rag_chatbot_dev TO `<APP_SP_UUID>`;
+GRANT USE SCHEMA ON SCHEMA rag_chatbot_dev.silver TO `<APP_SP_UUID>`;
+GRANT SELECT ON TABLE rag_chatbot_dev.silver.doc_chunks_builtin TO `<APP_SP_UUID>`;
+-- the Delta Sync index is its own securable — easy to miss:
+GRANT SELECT ON TABLE rag_chatbot_dev.silver.doc_chunks_builtin_vs TO `<APP_SP_UUID>`;
+```
+
+**4. Grant LLM access.** The app generates answers with
+`system.ai.meta-llama-3-3-70b-instruct` via Unity Gateway. App service
+principals inherit no default access (they belong to no groups), and grants on
+`system` / `system.ai` require a **metastore admin**:
+
+```sql
+GRANT USE CATALOG ON CATALOG system TO `<APP_SP_UUID>`;
+GRANT USE SCHEMA ON SCHEMA system.ai TO `<APP_SP_UUID>`;
+GRANT EXECUTE ON MODEL SERVICE system.ai.meta-llama-3-3-70b-instruct TO `<APP_SP_UUID>`;
+```
+
+Self-service alternative (no admin needed): create a model service in your own
+catalog (e.g. `rag_chatbot_dev.silver.chatbot_llama`) routing to the same
+Databricks-hosted llama, grant the app SP `EXECUTE` on it, and point the app at
+it via the `LLM_MODEL` env var in `src/app/app.yaml`.
 
 ### 2. Run the job
 
