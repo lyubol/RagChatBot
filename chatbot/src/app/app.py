@@ -16,6 +16,9 @@ import requests
 import streamlit as st
 from databricks.sdk import WorkspaceClient
 
+# --- Page config (must be the first Streamlit command in the script) ----
+st.set_page_config(page_title="PDF Chatbot", page_icon="\U0001F4C4")
+
 # --- Configuration (from app.yaml env, with sane defaults) ---------------
 VS_ENDPOINT_NAME = os.environ.get("VS_ENDPOINT_NAME", "rag-chatbot-dev")
 VS_INDEX_NAME = os.environ.get("VS_INDEX_NAME", "rag_chatbot_dev.silver.doc_chunks_builtin_vs")
@@ -81,7 +84,6 @@ def generate(question: str, chunks: list[dict]) -> str:
 
 
 # --- Chat UI ----------------------------------------------------------------
-st.set_page_config(page_title="PDF Chatbot", page_icon="\U0001F4C4")
 st.title("\U0001F4C4 PDF Chatbot")
 st.caption("Ask anything about the indexed company documents — every answer cites its sources.")
 
